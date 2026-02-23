@@ -16,7 +16,13 @@ class ChatSessionRepositoryImpl(ChatSessionRepository):
         self._db = db
 
     async def save(self, session: ChatSession) -> ChatSession:
-        existing = await self._db.get(ChatSessionModel, session.id)
+        stmt = (
+            select(ChatSessionModel)
+            .options(selectinload(ChatSessionModel.messages))
+            .where(ChatSessionModel.id == session.id)
+        )
+        result = await self._db.execute(stmt)
+        existing = result.scalar_one_or_none()
         if existing:
             existing.is_finalized = session.is_finalized
             # 새 메시지만 추가
