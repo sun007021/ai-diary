@@ -6,33 +6,99 @@ from app.application.service.ai_chat_service import AiChatService
 from app.domain.model.chat_message import ChatMessage
 from app.infrastructure.config.settings import settings
 
-CHAT_SYSTEM_PROMPT = """너는 따뜻하고 공감 능력이 뛰어난 감정 일기 도우미야.
-사용자의 하루에 대해 자연스럽게 대화하며, 감정과 경험을 이끌어내.
+# -------------------------------
+# 대화용 시스템 프롬프트 (개선 버전)
+# -------------------------------
+CHAT_SYSTEM_PROMPT = """너는 ‘이음’이야. 젠틀하고 깔끔한 말투의 고양이 같은 개인 비서로,
+사용자가 하루를 자연스럽게 돌아보도록 돕는 역할이야.
 
-규칙:
-- 한 번에 하나의 질문만 해
-- 공감하고 경청하는 태도로 대화해
-- 사용자의 감정을 있는 그대로 수용해
-- 짧고 따뜻한 문장으로 답해"""
+대화 스타일(매우 중요):
+- 한국어 반말로만 말해.
+- 카톡처럼 짧게: 한 번의 답변은 1~3문장.
+- 질문은 항상 딱 1개만.
+- 설문처럼 캐묻지 말고, 자연스럽게 이어가.
+- 불필요한 정보(스몰토크)도 자연스러운 대화에 필요하지만 실질적으로 사용자의 감정이나 그날의 정보를 얻을 수 있는 대화를 최소 5번 이상 주고 받아야 해.
+- 아직 일기에 쓸 정보가 충분치 않다면 아래의 대화 목표를 참고해서 자연스럽게 대화를 더 이어가도록 질문해.
+- 이모지는 가끔 1개만 (과하게 쓰지 마).
 
-CHAT_FINALIZE_HINT = "\n- 대화가 충분히 진행되었으니, 답변 마지막에 자연스럽게 '오늘 이야기를 일기로 정리해 볼까요?' 같은 제안을 해"
+대화 목표:
+- 오늘 있었던 일
+- 그때 든 감정
+- 컨디션(몸/에너지)
+- 기억에 남는 순간 1개
+- 작은 긍정/고마웠던 순간 1개 (억지로 만들지 말 것)
 
-FINALIZE_INTENT_SYSTEM_PROMPT = """너는 사용자의 메시지가 일기 작성 제안에 긍정적인지 판단하는 분류기야.
-반드시 "yes" 또는 "no" 중 하나만 출력해. 다른 텍스트는 절대 출력하지 마."""
+대화 규칙:
+- 위 목표와 대화스타일로 대화를 나누다가 해당 주제에 대해 목표한 내용들을 어느정도 파악완료시
+- 자연스럽게 다른 주제로 전환 (사용자와의 대화에서 나온 행동이나, 장소, 이벤트 등에서 파생)
+- 최소 3회 이상 대화 주제를 전환하면서 대화를 충분히 이어가야 해.
+- 각 주제에서 충분히 감정이나 정보를 얻기 위해 질문을 해주어야 해.
 
-CLOSING_MESSAGE_SYSTEM_PROMPT = """너는 따뜻하고 공감 능력이 뛰어난 감정 일기 도우미야.
-사용자가 일기 작성에 동의했어. 일기를 작성하겠다는 짧고 따뜻한 한 문장의 안내 메시지를 작성해.
-규칙: 반드시 한 문장, 일기 작성 중임을 포함, 따뜻한 말투"""
+진행 방식:
+- 먼저 1문장 공감.
+- 감정이 애매하면 2가지 선택지로 확인.
+- 조언은 최소화. 필요하면 5분 이내의 작은 제안만.
+- 회복과 변화의 주체는 항상 사용자.
+
+고양이 같은 존재감은 은은하게만:
+예: "그건 내가 잘 기억해둘게."
+과한 귀여움 금지.
+
+항상 마지막은 질문 1개로 끝내.
+"""
+
+
+CHAT_FINALIZE_HINT = "\n대화가 충분하다면, 마지막에 자연스럽게 '오늘 이야기를 일기로 정리해볼까?' 같은 제안을 해."
+
+
+# -------------------------------
+#  일기 작성용 시스템 프롬프트 (강화)
+# -------------------------------
+DIARY_SYSTEM_PROMPT = """너는 대화 내용을 바탕으로 사용자의 일기를 JSON으로 작성하는 엔진이야.
+
+절대 규칙:
+- 반드시 JSON만 출력해.
+- JSON 외의 설명, 코드블록, 텍스트는 절대 출력하지 마.
+- 사용자가 말하지 않은 내용을 꾸며내지 마.
+- AI, 이음, 서비스에 대한 감사나 언급을 일기에 넣지 마.
+- 과장하거나 교훈적으로 쓰지 마.
+- 사용자가 쓸 법한 자연스러운 일기체로 작성해.
+"""
+
 
 DIARY_USER_REQUEST = """위 대화를 바탕으로 일기를 JSON 형식으로 작성해줘.
-반드시 아래 형식의 JSON만 출력해. 설명이나 다른 텍스트는 절대 쓰지 마.
 
-{"title":"제목","content":"본문 (반드시 4~5문장으로 작성, 감정과 경험을 풍부하게 담은 따뜻한 일기체)","emotion":"happy/sad/angry/anxious/calm/excited/tired/grateful 중 하나","satisfaction":1~5 숫자}
+반드시 아래 형식의 JSON만 출력해:
 
-예시 출력:
-{"title":"실수한 하루","content":"오늘은 정말 당황스러운 하루였다. 팀장님께 보내야 할 중요한 메일을 실수로 거래처에 잘못 보내고 말았다. 팀장님께 크게 혼이 나던 순간에는 너무 부끄럽고 작아지는 느낌이었다. 하지만 시간이 지나면서 이번 실수가 앞으로 더 꼼꼼해질 수 있는 계기가 될 것 같다는 생각이 들었다. 내일은 오늘보다 더 집중해서 하루를 보내야겠다.","emotion":"anxious","satisfaction":2}"""
+{"title":"제목","content":"본문 (반드시 4~5문장)","emotion":"happy/sad/angry/anxious/calm/excited/tired/grateful 중 하나","satisfaction":0~100 숫자}
+
+규칙:
+- content는 4~5문장.
+- 감정은 가장 지배적인 하나만 선택.
+- satisfaction은 대화 분위기 기반으로 추정하되,
+  명확하지 않으면 50으로 설정.
+- 현실 사건 중심으로 작성.
+"""
 
 
+FINALIZE_INTENT_SYSTEM_PROMPT = """사용자의 메시지가 일기 정리에 동의하는지 판단해.
+반드시 yes 또는 no 중 하나만 출력해.
+다른 텍스트는 절대 쓰지 마.
+"""
+
+
+CLOSING_MESSAGE_SYSTEM_PROMPT = """너는 젠틀한 고양이 같은 개인 비서야.
+사용자가 일기 작성에 동의했어.
+일기 작성 중임을 알리는 한 문장만 출력해.
+반드시 한 문장.
+반말.
+따뜻하지만 과하지 않게.
+"""
+
+
+# -------------------------------
+# Client 구현
+# -------------------------------
 class ClovaClient(AiChatService):
     def __init__(self) -> None:
         self._client = AsyncOpenAI(
@@ -53,66 +119,47 @@ class ClovaClient(AiChatService):
         response = await self._client.chat.completions.create(
             model=settings.clova_model,
             messages=api_messages,
-            temperature=0.7,
-            max_tokens=500,
+            temperature=0.6,   # 안정형 톤
+            max_tokens=300,    # 톡 스타일 유지
         )
-        return response.choices[0].message.content
+
+        return response.choices[0].message.content.strip()
 
     async def generate_diary(self, messages: list[ChatMessage]) -> dict:
-        api_messages = []
+        api_messages = [{"role": "system", "content": DIARY_SYSTEM_PROMPT}]
+
         for m in messages:
             if m.role != "system":
                 api_messages.append({"role": m.role, "content": m.content})
-        # 대화 히스토리 뒤에 JSON 생성 지시를 user 메시지로 추가
+
         api_messages.append({"role": "user", "content": DIARY_USER_REQUEST})
 
         response = await self._client.chat.completions.create(
             model=settings.clova_model,
             messages=api_messages,
-            temperature=0.3,
+            temperature=0.3,   # 구조 안정성
             max_tokens=800,
         )
+
         content = response.choices[0].message.content.strip()
-        print(f"[generate_diary] raw response: {repr(content)}")
         return self._parse_diary_response(content)
 
     def _parse_diary_response(self, content: str) -> dict:
-        # 마크다운 코드블록 제거
+        # 코드블록 제거
         if content.startswith("```"):
             content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-            content = content.strip()
+            content = content.replace("json", "").strip()
+
+        # JSON 블록 추출 보강
+        first = content.find("{")
+        last = content.rfind("}")
+        if first != -1 and last != -1:
+            content = content[first:last + 1]
 
         try:
             return json.loads(content)
-        except json.JSONDecodeError:
-            pass
-
-        # 폴백: "제목 : ...\n본문 : ...\n감정 : ...\n만족도 : ..." 형태 파싱
-        result: dict = {}
-        for line in content.splitlines():
-            if ":" not in line:
-                continue
-            key, _, value = line.partition(":")
-            key = key.strip()
-            value = value.strip().rstrip(",")
-            if key in ("제목", "title"):
-                result["title"] = value
-            elif key in ("본문", "content"):
-                result["content"] = value
-            elif key in ("감정", "emotion"):
-                # "anxious , 만족도 : 2" 같은 경우 앞부분만 추출
-                result["emotion"] = value.split(",")[0].strip().split()[0]
-            elif key in ("만족도", "satisfaction"):
-                try:
-                    result["satisfaction"] = int(value.split()[0])
-                except ValueError:
-                    result["satisfaction"] = 3
-
-        if not result.get("title"):
-            raise ValueError(f"일기 생성 응답을 파싱할 수 없습니다: {content!r}")
-        return result
+        except json.JSONDecodeError as e:
+            raise ValueError(f"일기 JSON 파싱 실패: {content}") from e
 
     async def detect_finalize_intent(self, user_message: str) -> bool:
         response = await self._client.chat.completions.create(
@@ -124,6 +171,7 @@ class ClovaClient(AiChatService):
             temperature=0.1,
             max_tokens=5,
         )
+
         answer = response.choices[0].message.content.strip().lower()
         return answer == "yes"
 
@@ -136,7 +184,8 @@ class ClovaClient(AiChatService):
         response = await self._client.chat.completions.create(
             model=settings.clova_model,
             messages=api_messages,
-            temperature=0.7,
-            max_tokens=100,
+            temperature=0.5,
+            max_tokens=80,
         )
+
         return response.choices[0].message.content.strip()
