@@ -7,10 +7,12 @@ from app.application.usecase.get_chat_session import GetChatSessionUseCase
 from app.application.usecase.send_message import SendMessageUseCase
 from app.application.usecase.start_chat_session import StartChatSessionUseCase
 from app.domain.repository.chat_session_repository import ChatSessionRepository
-from app.infrastructure.config.dependencies import get_ai_chat_service, get_chat_session_repo
+from app.domain.repository.diary_repository import DiaryRepository
+from app.infrastructure.config.dependencies import get_ai_chat_service, get_chat_session_repo, get_diary_repo
 from app.presentation.router.schemas import (
     ChatMessageResponse,
     ChatSessionResponse,
+    DiaryResponse,
     SendMessageRequest,
     SendMessageResponse,
 )
@@ -62,14 +64,16 @@ async def send_message(
     body: SendMessageRequest,
     repo: ChatSessionRepository = Depends(get_chat_session_repo),
     ai: AiChatService = Depends(get_ai_chat_service),
+    diary_repo: DiaryRepository = Depends(get_diary_repo),
 ):
-    usecase = SendMessageUseCase(repo, ai)
+    usecase = SendMessageUseCase(repo, ai, diary_repo)
     try:
-        user_msg, ai_msg, suggest = await usecase.execute(session_id, body.content)
+        user_msg, ai_msg, suggest, diary = await usecase.execute(session_id, body.content)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return SendMessageResponse(
         user_message=ChatMessageResponse.from_domain(user_msg),
         ai_message=ChatMessageResponse.from_domain(ai_msg),
         should_suggest_finalize=suggest,
+        diary=DiaryResponse.from_domain(diary) if diary else None,
     )

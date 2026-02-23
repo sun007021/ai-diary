@@ -9,3 +9,9 @@ class AiChatService(ABC):
 
     @abstractmethod
     async def generate_diary(self, messages: list[ChatMessage]) -> dict: ...
+
+    @abstractmethod
+    async def detect_finalize_intent(self, user_message: str) -> bool: ...
+
+    @abstractmethod
+    async def generate_closing_message(self, messages: list[ChatMessage]) -> str: ...

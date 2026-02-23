@@ -48,6 +48,7 @@ class SendMessageResponse(BaseModel):
     user_message: ChatMessageResponse
     ai_message: ChatMessageResponse
     should_suggest_finalize: bool
+    diary: "DiaryResponse | None" = None
 
 
 class DiaryResponse(BaseModel):
