@@ -17,3 +17,6 @@ class DiaryRepository(ABC):
 
     @abstractmethod
     async def find_all(self, offset: int = 0, limit: int = 20) -> list[Diary]: ...
+
+    @abstractmethod
+    async def count(self) -> int: ...
