@@ -96,6 +96,46 @@ CLOSING_MESSAGE_SYSTEM_PROMPT = """너는 젠틀한 고양이 같은 개인 비�
 """
 
 
+MEMORY_NEED_SYSTEM_PROMPT = """사용자 메시지가 과거 기억이나 이전에 있었던 사건을 언급하는지 판단해.
+예: "저번에 말했던 거", "지난번 발표", "예전에 친구 만났을 때", "그때 그 일", "최근에 회의 언제 했지?",
+yes 또는 no 중 하나만 출력해. 다른 텍스트는 절대 쓰지 마.
+"""
+
+
+CHUNK_EXTRACT_SYSTEM_PROMPT = """너는 대화에서 기억할 만한 사건 중심 정보를 추출하는 엔진이야.
+
+절대 규칙:
+- 반드시 JSON 배열만 출력해.
+- JSON 외의 설명, 코드블록, 텍스트는 절대 출력하지 마.
+- 사용자가 직접 경험한 구체적인 사건만 추출해.
+- 감정이 동반된 사건 또는 기억에 남을 만한 사건을 우선 추출해.
+- 최대 5개까지만 추출해. 없으면 빈 배열 반환.
+- 대화에서 명시적으로 언급된 정보만 기록해. 추측하거나 꾸며내지 마.
+"""
+
+
+CHUNK_EXTRACT_USER_REQUEST = """위 대화에서 기억할 만한 사건들을 JSON 배열로 추출해줘.
+
+반드시 아래 형식의 JSON 배열만 출력해:
+
+[
+  {
+    "text": "사건을 한 문장으로 서술. 인물·장소·시간이 대화에 나왔다면 반드시 포함. 언급 없으면 생략.",
+    "tags": ["태그1", "태그2"],
+    "event_type": "work/social/emotion/personal/achievement 중 하나",
+    "who": "관련 인물 (대화에 언급된 경우만, 없으면 null)",
+    "where": "장소 (대화에 언급된 경우만, 없으면 null)",
+    "when": "시간/날짜 표현 (대화에 언급된 경우만, 없으면 null)"
+  }
+]
+
+규칙:
+- who/where/when은 사용자가 직접 말한 내용만 적어.
+- 대화에 없는 정보는 반드시 null로 남겨. 절대 추측하지 마.
+- 사건이 없으면 [] 반환.
+"""
+
+
 # -------------------------------
 # Client 구현
 # -------------------------------
@@ -106,10 +146,23 @@ class ClovaClient(AiChatService):
             base_url=settings.clova_base_url,
         )
 
-    async def chat(self, messages: list[ChatMessage], suggest_finalize: bool = False) -> str:
+    async def chat(
+        self,
+        messages: list[ChatMessage],
+        suggest_finalize: bool = False,
+        memories: list[str] | None = None,
+    ) -> str:
         system_prompt = CHAT_SYSTEM_PROMPT
         if suggest_finalize:
             system_prompt += CHAT_FINALIZE_HINT
+        if memories:
+            system_prompt += (
+                "\n\n[과거 기억 - 중요 규칙]\n"
+                "아래는 사용자의 실제 과거 기록이야. 반드시 이 내용만 근거로 답해.\n"
+                "기록에 없는 시간, 장소, 세부 정보는 절대 지어내지 마.\n"
+                "모르는 건 '기록에 없어서 잘 모르겠어'라고 솔직하게 말해.\n\n"
+                + "\n".join(memories)
+            )
 
         api_messages = [{"role": "system", "content": system_prompt}]
         for m in messages:
@@ -189,3 +242,49 @@ class ClovaClient(AiChatService):
         )
 
         return response.choices[0].message.content.strip()
+
+    async def classify_memory_need(self, user_message: str) -> bool:
+        response = await self._client.chat.completions.create(
+            model=settings.clova_model,
+            messages=[
+                {"role": "system", "content": MEMORY_NEED_SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.1,
+            max_tokens=5,
+        )
+        answer = response.choices[0].message.content.strip().lower()
+        return answer == "yes"
+
+    async def extract_event_chunks(self, messages: list[ChatMessage]) -> list[dict]:
+        api_messages = [{"role": "system", "content": CHUNK_EXTRACT_SYSTEM_PROMPT}]
+        for m in messages:
+            if m.role != "system":
+                api_messages.append({"role": m.role, "content": m.content})
+        api_messages.append({"role": "user", "content": CHUNK_EXTRACT_USER_REQUEST})
+
+        response = await self._client.chat.completions.create(
+            model=settings.clova_model,
+            messages=api_messages,
+            temperature=0.2,
+            max_tokens=800,
+        )
+
+        content = response.choices[0].message.content.strip()
+        return self._parse_chunks_response(content)
+
+    def _parse_chunks_response(self, content: str) -> list[dict]:
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            content = content.replace("json", "").strip()
+
+        first = content.find("[")
+        last = content.rfind("]")
+        if first != -1 and last != -1:
+            content = content[first : last + 1]
+
+        try:
+            result = json.loads(content)
+            return result if isinstance(result, list) else []
+        except json.JSONDecodeError:
+            return []

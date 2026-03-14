@@ -3,12 +3,20 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.application.service.ai_chat_service import AiChatService
+from app.application.usecase.chat_agent import ChatAgent
+from app.application.usecase.extract_chunks import ExtractChunksUseCase
 from app.application.usecase.get_chat_session import GetChatSessionUseCase
 from app.application.usecase.send_message import SendMessageUseCase
 from app.application.usecase.start_chat_session import StartChatSessionUseCase
 from app.domain.repository.chat_session_repository import ChatSessionRepository
 from app.domain.repository.diary_repository import DiaryRepository
-from app.infrastructure.config.dependencies import get_ai_chat_service, get_chat_session_repo, get_diary_repo
+from app.infrastructure.config.dependencies import (
+    get_ai_chat_service,
+    get_chat_agent,
+    get_chat_session_repo,
+    get_diary_repo,
+    get_extract_chunks_usecase,
+)
 from app.presentation.router.schemas import (
     ChatMessageResponse,
     ChatSessionResponse,
@@ -65,8 +73,10 @@ async def send_message(
     repo: ChatSessionRepository = Depends(get_chat_session_repo),
     ai: AiChatService = Depends(get_ai_chat_service),
     diary_repo: DiaryRepository = Depends(get_diary_repo),
+    chat_agent: ChatAgent = Depends(get_chat_agent),
+    extract_chunks: ExtractChunksUseCase = Depends(get_extract_chunks_usecase),
 ):
-    usecase = SendMessageUseCase(repo, ai, diary_repo)
+    usecase = SendMessageUseCase(repo, ai, diary_repo, chat_agent, extract_chunks)
     try:
         user_msg, ai_msg, suggest, diary = await usecase.execute(session_id, body.content)
     except ValueError as e:

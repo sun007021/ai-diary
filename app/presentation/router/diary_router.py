@@ -4,12 +4,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.application.service.ai_chat_service import AiChatService
+from app.application.usecase.extract_chunks import ExtractChunksUseCase
 from app.application.usecase.finalize_diary import FinalizeDiaryUseCase
 from app.application.usecase.get_diary import GetDiaryByDateUseCase
 from app.application.usecase.list_diaries import ListDiariesUseCase
 from app.domain.repository.chat_session_repository import ChatSessionRepository
 from app.domain.repository.diary_repository import DiaryRepository
-from app.infrastructure.config.dependencies import get_ai_chat_service, get_chat_session_repo, get_diary_repo
+from app.infrastructure.config.dependencies import (
+    get_ai_chat_service,
+    get_chat_session_repo,
+    get_diary_repo,
+    get_extract_chunks_usecase,
+)
 from app.presentation.router.schemas import DiaryListResponse, DiaryResponse
 
 router = APIRouter(prefix="/api/v1/diaries", tags=["diaries"])
@@ -26,8 +32,9 @@ async def finalize_diary(
     chat_repo: ChatSessionRepository = Depends(get_chat_session_repo),
     diary_repo: DiaryRepository = Depends(get_diary_repo),
     ai: AiChatService = Depends(get_ai_chat_service),
+    extract_chunks: ExtractChunksUseCase = Depends(get_extract_chunks_usecase),
 ):
-    usecase = FinalizeDiaryUseCase(chat_repo, diary_repo, ai)
+    usecase = FinalizeDiaryUseCase(chat_repo, diary_repo, ai, extract_chunks)
     try:
         diary = await usecase.execute(session_id)
     except ValueError as e:

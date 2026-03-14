@@ -1,8 +1,9 @@
 import uuid
 from datetime import date, datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, Boolean
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -47,4 +48,22 @@ class DiaryModel(Base):
     chat_session_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("chat_sessions.id"), nullable=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class EventChunkModel(Base):
+    __tablename__ = "event_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chat_session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("chat_sessions.id"), nullable=False
+    )
+    diary_date: Mapped[date] = mapped_column(Date, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    who: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    where: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    when: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
